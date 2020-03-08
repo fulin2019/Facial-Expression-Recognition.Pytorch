@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-
+from torch.utils.checkpoint import checkpoint_sequential
 
 cfg = {
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
@@ -20,7 +20,8 @@ class VGG(nn.Module):
         self.classifier = nn.Linear(512, 7)
 
     def forward(self, x):
-        out = self.features(x)
+        # out = self.features(x)
+        out = checkpoint_sequential(self.features, 2, x)
         out = out.view(out.size(0), -1)
         out = F.dropout(out, p=0.5, training=self.training)
         out = self.classifier(out)

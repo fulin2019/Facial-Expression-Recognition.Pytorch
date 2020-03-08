@@ -24,6 +24,7 @@ parser.add_argument('--fold', default=1, type=int, help='k fold number')
 parser.add_argument('--bs', default=128, type=int, help='batch_size')
 parser.add_argument('--lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--gpu', action='store_true', default=False, help='open gpu if exists')
 opt = parser.parse_args()
 
 use_cuda = torch.cuda.is_available()

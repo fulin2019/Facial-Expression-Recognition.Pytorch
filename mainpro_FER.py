@@ -20,12 +20,13 @@ from models import *
 parser = argparse.ArgumentParser(description='PyTorch Fer2013 CNN Training')
 parser.add_argument('--model', type=str, default='VGG19', help='CNN architecture')
 parser.add_argument('--dataset', type=str, default='FER2013', help='CNN architecture')
-parser.add_argument('--bs', default=128, type=int, help='learning rate')
+parser.add_argument('--bs', default=128, type=int, help='batch size')
 parser.add_argument('--lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--gpu', action='store_true', default=False, help='open gpu if exists')
 opt = parser.parse_args()
 
-use_cuda = torch.cuda.is_available()
+use_cuda = opt.gpu and torch.cuda.is_available()
 best_PublicTest_acc = 0  # best PublicTest accuracy
 best_PublicTest_acc_epoch = 0
 best_PrivateTest_acc = 0  # best PrivateTest accuracy
@@ -44,7 +45,7 @@ path = os.path.join(opt.dataset + '_' + opt.model)
 # Data
 print('==> Preparing data..')
 transform_train = transforms.Compose([
-    transforms.RandomCrop(44),
+    transforms.RandomCrop(cut_size),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
 ])
@@ -67,11 +68,16 @@ if opt.model == 'VGG19':
 elif opt.model  == 'Resnet18':
     net = ResNet18()
 
+if use_cuda:
+    net = torch.nn.DataParallel(net)
+
 if opt.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
     assert os.path.isdir(path), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load(os.path.join(path,'PrivateTest_model.t7'))
+    model_path = os.path.join(path, 'PrivateTest_model.t7')
+    print("model_path:", model_path)
+    checkpoint = torch.load(model_path)
 
     net.load_state_dict(checkpoint['net'])
     best_PublicTest_acc = checkpoint['best_PublicTest_acc']
@@ -87,6 +93,8 @@ if use_cuda:
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=opt.lr, momentum=0.9, weight_decay=5e-4)
+# Adam
+# optimizer = optim.Adam(net.parameters(), lr=opt.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
 
 # Training
 def train(epoch):
@@ -110,13 +118,13 @@ def train(epoch):
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
         optimizer.zero_grad()
-        inputs, targets = Variable(inputs), Variable(targets)
+        inputs, targets = Variable(inputs, requires_grad=True), Variable(targets)
         outputs = net(inputs)
         loss = criterion(outputs, targets)
         loss.backward()
         utils.clip_gradient(optimizer, 0.1)
         optimizer.step()
-        train_loss += loss.data[0]
+        train_loss += loss.data.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
@@ -125,6 +133,7 @@ def train(epoch):
             % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
     Train_acc = 100.*correct/total
+
 
 def PublicTest(epoch):
     global PublicTest_acc
@@ -139,11 +148,11 @@ def PublicTest(epoch):
         inputs = inputs.view(-1, c, h, w)
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = Variable(inputs, volatile=True), Variable(targets)
+        inputs, targets = Variable(inputs, requires_grad=True), Variable(targets)
         outputs = net(inputs)
         outputs_avg = outputs.view(bs, ncrops, -1).mean(1)  # avg over crops
         loss = criterion(outputs_avg, targets)
-        PublicTest_loss += loss.data[0]
+        PublicTest_loss += loss.data.item()
         _, predicted = torch.max(outputs_avg.data, 1)
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
@@ -180,11 +189,11 @@ def PrivateTest(epoch):
         inputs = inputs.view(-1, c, h, w)
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = Variable(inputs, volatile=True), Variable(targets)
+        inputs, targets = Variable(inputs, requires_grad=True), Variable(targets)
         outputs = net(inputs)
         outputs_avg = outputs.view(bs, ncrops, -1).mean(1)  # avg over crops
         loss = criterion(outputs_avg, targets)
-        PrivateTest_loss += loss.data[0]
+        PrivateTest_loss += loss.data.item()
         _, predicted = torch.max(outputs_avg.data, 1)
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()

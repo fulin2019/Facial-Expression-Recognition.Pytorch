@@ -13,8 +13,11 @@ import torch.nn as nn
 import torch.nn.init as init
 from torch.autograd import Function
 
-_, term_width = os.popen('stty size', 'r').read().split()
-term_width = int(term_width)
+try:
+    _, term_width = os.popen('stty size', 'r').read().split()
+    term_width = int(term_width)
+except:
+    term_width = 10
 
 TOTAL_BAR_LENGTH = 30.
 last_time = time.time()
